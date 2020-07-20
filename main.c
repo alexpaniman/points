@@ -84,9 +84,74 @@ GtkWidget* draw_every_path_with_own_color_switch;
 
 
 // Use define to get `GtkWidget*` from `GtkBuilder*` called `builder`
-#define GET_WIDGET(widget) GTK_WIDGET(          \
+#define GET_WIDGET(widget) GTK_WIDGET(       \
     gtk_builder_get_object(builder, widget)  \
 )
+
+enum {
+X_COORDINATE_COLUMN, // --> int field
+Y_COORDINATE_COLUMN, // --> int field
+
+N_COLUMNS
+};
+
+GtkTreeStore* create_tree_store_and_fill_it(void) {
+  GtkTreeStore* tree_store =
+    gtk_tree_store_new(N_COLUMNS,
+                       G_TYPE_INT, // --> int field
+                       G_TYPE_INT  // --> int field
+    );
+
+  GtkTreeIter iter;
+
+  for (int i = 0; i < 10; ++ i) {
+    // --> Acquire an iterator
+    gtk_tree_store_append(tree_store, &iter, NULL);
+
+    gtk_tree_store_set(tree_store, &iter,
+                       X_COORDINATE_COLUMN, /*  ->  */ i,
+                       Y_COORDINATE_COLUMN, /*  ->  */ i + 10,
+                       -1
+    );
+  }
+
+  return tree_store;
+}
+
+void append_column(char* name) {
+  GtkCellRenderer* column_renderer =
+    gtk_cell_renderer_text_new();
+
+  GtkTreeViewColumn* column =
+    gtk_tree_view_column_new_with_attributes(
+      name, column_renderer, NULL
+    );
+
+  gtk_tree_view_column_set_clickable(column, TRUE);
+  gtk_tree_view_column_set_expand(column, TRUE);
+
+  gtk_tree_view_append_column(
+    GTK_TREE_VIEW(tree_view_for_points),
+    column);
+}
+
+void initialize_tree_view_columns(void) {
+  append_column("X Coordinate");
+  append_column("Y Coordinate");
+}
+
+void initialize_tree_view_for_points(void) {
+  initialize_tree_view_columns();
+
+  GtkTreeModel* model = GTK_TREE_MODEL(
+    create_tree_store_and_fill_it()
+  );
+
+  gtk_tree_view_set_model(
+    GTK_TREE_VIEW(tree_view_for_points),
+    model
+  );
+}
 
 int main(int argc, char **argv) {
   // Initialize GTK with command line arguments so it will recognize
@@ -105,6 +170,8 @@ int main(int argc, char **argv) {
   save_image_file_picker = GET_WIDGET("save_image_file_picker");
 
   tree_view_for_points = GET_WIDGET("tree_view_for_points");
+  initialize_tree_view_for_points();
+  
   x_entry = GET_WIDGET("x_entry");
   y_entry = GET_WIDGET("y_entry");
   choose_path_text_combo_box = GET_WIDGET("choose_path_text_combo_box");
@@ -129,22 +196,6 @@ int main(int argc, char **argv) {
 
   // Exit with success
   return EXIT_SUCCESS;
-}
-
-void initialize_tree_view_for_points() {
-  GtkTreeIter* iter;
-  GtkTreeStore* store = gtk_tree_store_new(3,
-    G_TYPE_INT, G_TYPE_STRING, GTK_TYPE_BUTTON);
-
-  // TODO: remove --->
-  gtk_tree_store_set(store, iter,
-                     2, "hey", gtk_button_new());
-  // <---
-
-  gtk_tree_view_set_model(
-     GTK_TREE_VIEW(tree_view_for_points),
-    GTK_TREE_MODEL(tree_view_for_points)
-  );
 }
 
 // Cairo surface that represents `drawing_area'
