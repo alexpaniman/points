@@ -63,10 +63,9 @@
  *  */
 
 // ----> Widgets borrowed from `layout.glade` <---- //
-
 GtkWidget* main_window;
 
-// --> Widgets from <Preview> tab <-- //
+// --> Widgets from     <Preview> tab <-- //
 GtkWidget* drawing_area;
 GtkWidget* save_project_file_picker;
 GtkWidget* save_image_file_picker;
@@ -77,93 +76,79 @@ GtkWidget* x_entry;
 GtkWidget* y_entry;
 GtkWidget* choose_path_text_combo_box;
 
-// --> Widgets from <Point Lists> tab <-- //
+// --> Widgets from    <Settings> tab <-- //
 GtkWidget* line_width_entry;
 GtkWidget* draw_grid_switch;
 GtkWidget* draw_every_path_with_own_color_switch;
+// ------------------------------------------------ //
 
+enum { // <-- Tree store columns
+  X_COORDINATE_COLUMN,
+  Y_COORDINATE_COLUMN,
 
-// Use define to get `GtkWidget*` from `GtkBuilder*` called `builder`
-#define GET_WIDGET(widget) GTK_WIDGET(       \
-    gtk_builder_get_object(builder, widget)  \
-)
-
-enum {
-X_COORDINATE_COLUMN, // --> int field
-Y_COORDINATE_COLUMN, // --> int field
-
-N_COLUMNS
+  N_COLUMNS // It corresponds to number of columns
 };
 
-GtkTreeStore* create_tree_store_and_fill_it(void) {
-  GtkTreeStore* tree_store =
-    gtk_tree_store_new(N_COLUMNS,
-                       G_TYPE_STRING, // --> int field
-                       G_TYPE_STRING  // --> int field
-    );
+GtkTreeStore* tree_store = NULL;
 
-  GtkTreeIter iter;
-
-  for (int i = 0; i < 10; ++ i) {
-    // --> Acquire an iterator
-    gtk_tree_store_append(tree_store, &iter, NULL);
-
-    gtk_tree_store_set(tree_store, &iter,
-                       X_COORDINATE_COLUMN, /*  ->  */ "I'm x", // FIXME: real values
-                       Y_COORDINATE_COLUMN, /*  ->  */ "I'm y", // FIXME: real values
-                       -1
-    );
-
-    GtkTreeIter new_iter;
-
-    gtk_tree_store_append(tree_store, &new_iter, &iter);
-
-    gtk_tree_store_set(tree_store, &new_iter,
-                       X_COORDINATE_COLUMN, /*  ->  */ "I'm nested x",  // FIXME: real values
-                       Y_COORDINATE_COLUMN, /*  ->  */ "I'm nested y",  // FIXME: real values
-                       -1);
-  }
-
-  return tree_store;
+void initialize_tree_store(void) {
+  tree_store = gtk_tree_store_new(N_COLUMNS,
+                                  G_TYPE_STRING, /* --> X coordinate column */
+                                  G_TYPE_STRING  /* --> Y coordinate column */);
 }
 
-void append_column(char* name, gint column_id) {
+// It appends columns to `tree_view_for_columns` declared in the top of this file
+void append_column_to_tree_view(char* name, gint column_id) {
   GtkCellRenderer* column_renderer =
-    gtk_cell_renderer_text_new();
+    gtk_cell_renderer_text_new(); // Use simple renderer
+                                  // To render text as... text
 
+  // This makes column cells editable (via entry)
   g_object_set(column_renderer, "editable", TRUE, NULL);
 
+  // Declare column name, how to render column cells (via cell renderer)
+  //         it's type (text) and link it with corresponding column id
   GtkTreeViewColumn* column =
     gtk_tree_view_column_new_with_attributes(
       name, column_renderer,
       "text", column_id, NULL);
 
+  // Make columns resizable & clickable
   gtk_tree_view_column_set_clickable(column, TRUE);
   gtk_tree_view_column_set_resizable(column, TRUE);
+
+  // Make columns take all the available space
   gtk_tree_view_column_set_expand(column, TRUE);
 
+  // And finally append our column
   gtk_tree_view_append_column(
     GTK_TREE_VIEW(tree_view_for_points),
     column);
 }
 
 void initialize_tree_view_columns(void) {
-  append_column("X Coordinate", X_COORDINATE_COLUMN);
-  append_column("Y Coordinate", Y_COORDINATE_COLUMN);
+  append_column_to_tree_view("X Coordinate", X_COORDINATE_COLUMN);
+  append_column_to_tree_view("Y Coordinate", Y_COORDINATE_COLUMN);
 }
 
+// `tree_view_for_points` is the widget declared in the top of the file
 void initialize_tree_view_for_points(void) {
   initialize_tree_view_columns();
-
-  GtkTreeModel* model = GTK_TREE_MODEL(
-    create_tree_store_and_fill_it()
-  );
+  initialize_tree_store(); // Initialize it's model
 
   gtk_tree_view_set_model(
     GTK_TREE_VIEW(tree_view_for_points),
-    model
+    GTK_TREE_MODEL(tree_store)
   );
 }
+
+// We will load `layout.glade` in this builder
+GtkBuilder* builder;
+
+// Use define to get widget by name from `builder`
+#define GET_WIDGET(widget) GTK_WIDGET(       \
+    gtk_builder_get_object(builder, widget)  \
+)
 
 int main(int argc, char **argv) {
   // Initialize GTK with command line arguments so it will recognize
@@ -171,26 +156,28 @@ int main(int argc, char **argv) {
   gtk_init(&argc, &argv);
 
   // Load glade file with all the widgets
-  GtkBuilder* builder = gtk_builder_new_from_file("layout.glade");
+  builder = gtk_builder_new_from_file("layout.glade");
 
   // --> Get widgets from just loaded layout file <--
+  main_window                = GET_WIDGET(               "main_window");
 
-  main_window = GET_WIDGET("main_window");
-  drawing_area = GET_WIDGET("drawing_area");
+  drawing_area               = GET_WIDGET(              "drawing_area");
+  save_project_file_picker   = GET_WIDGET(  "save_project_file_picker");
+  save_image_file_picker     = GET_WIDGET(    "save_image_file_picker");
 
-  save_project_file_picker = GET_WIDGET("save_project_file_picker");
-  save_image_file_picker = GET_WIDGET("save_image_file_picker");
-
-  tree_view_for_points = GET_WIDGET("tree_view_for_points");
-  initialize_tree_view_for_points();
-  
-  x_entry = GET_WIDGET("x_entry");
-  y_entry = GET_WIDGET("y_entry");
+  tree_view_for_points       = GET_WIDGET(      "tree_view_for_points");
+  x_entry                    = GET_WIDGET(                   "x_entry");
+  y_entry                    = GET_WIDGET(                   "y_entry");
   choose_path_text_combo_box = GET_WIDGET("choose_path_text_combo_box");
 
-  line_width_entry = GET_WIDGET("line_width_entry");
-  draw_grid_switch = GET_WIDGET("draw_grid_switch");
-  draw_every_path_with_own_color_switch = GET_WIDGET("draw_every_path_with_own_color_switch");
+  line_width_entry           = GET_WIDGET(          "line_width_entry");
+  draw_grid_switch           = GET_WIDGET(          "draw_grid_switch");
+  draw_every_path_with_own_color_switch =
+    GET_WIDGET(                "draw_every_path_with_own_color_switch");
+  // ------------------------------------------------
+
+  // Initialize tree_view & it's model
+  initialize_tree_view_for_points();
 
   // Make GTK listen to signals and callback program
   // when signals are being emited
