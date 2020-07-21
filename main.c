@@ -98,8 +98,8 @@ N_COLUMNS
 GtkTreeStore* create_tree_store_and_fill_it(void) {
   GtkTreeStore* tree_store =
     gtk_tree_store_new(N_COLUMNS,
-                       G_TYPE_INT, // --> int field
-                       G_TYPE_INT  // --> int field
+                       G_TYPE_STRING, // --> int field
+                       G_TYPE_STRING  // --> int field
     );
 
   GtkTreeIter iter;
@@ -109,25 +109,37 @@ GtkTreeStore* create_tree_store_and_fill_it(void) {
     gtk_tree_store_append(tree_store, &iter, NULL);
 
     gtk_tree_store_set(tree_store, &iter,
-                       X_COORDINATE_COLUMN, /*  ->  */ i,
-                       Y_COORDINATE_COLUMN, /*  ->  */ i + 10,
+                       X_COORDINATE_COLUMN, /*  ->  */ "I'm x", // FIXME: real values
+                       Y_COORDINATE_COLUMN, /*  ->  */ "I'm y", // FIXME: real values
                        -1
     );
+
+    GtkTreeIter new_iter;
+
+    gtk_tree_store_append(tree_store, &new_iter, &iter);
+
+    gtk_tree_store_set(tree_store, &new_iter,
+                       X_COORDINATE_COLUMN, /*  ->  */ "I'm nested x",  // FIXME: real values
+                       Y_COORDINATE_COLUMN, /*  ->  */ "I'm nested y",  // FIXME: real values
+                       -1);
   }
 
   return tree_store;
 }
 
-void append_column(char* name) {
+void append_column(char* name, gint column_id) {
   GtkCellRenderer* column_renderer =
     gtk_cell_renderer_text_new();
 
+  g_object_set(column_renderer, "editable", TRUE, NULL);
+
   GtkTreeViewColumn* column =
     gtk_tree_view_column_new_with_attributes(
-      name, column_renderer, NULL
-    );
+      name, column_renderer,
+      "text", column_id, NULL);
 
   gtk_tree_view_column_set_clickable(column, TRUE);
+  gtk_tree_view_column_set_resizable(column, TRUE);
   gtk_tree_view_column_set_expand(column, TRUE);
 
   gtk_tree_view_append_column(
@@ -136,8 +148,8 @@ void append_column(char* name) {
 }
 
 void initialize_tree_view_columns(void) {
-  append_column("X Coordinate");
-  append_column("Y Coordinate");
+  append_column("X Coordinate", X_COORDINATE_COLUMN);
+  append_column("Y Coordinate", Y_COORDINATE_COLUMN);
 }
 
 void initialize_tree_view_for_points(void) {
@@ -198,7 +210,7 @@ int main(int argc, char **argv) {
   return EXIT_SUCCESS;
 }
 
-// Cairo surface that represents `drawing_area'
+// Cairo surface that represents `drawing_area`
 cairo_surface_t* surface = NULL;
 
 // Make surface white(1, 1, 1)
