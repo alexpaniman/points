@@ -97,6 +97,20 @@ void initialize_tree_store(void) {
                                   G_TYPE_STRING  /* --> Y coordinate column */);
 }
 
+void on_tree_view_cell_edited(GtkCellRendererText *cell,
+                                gchar *path_string,
+                                gchar *new_text,
+                                gpointer user_data) {
+  GtkTreeIter iter;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
+                          gtk_tree_path_new_from_string(path_string));
+
+  gint* column_id = user_data;
+  gtk_tree_store_set(tree_store, &iter,
+                     *column_id, new_text,
+                     -1);
+}
+
 // It appends columns to `tree_view_for_columns` declared in the top of this file
 void append_column_to_tree_view(char* name, gint column_id) {
   GtkCellRenderer* column_renderer =
@@ -105,6 +119,8 @@ void append_column_to_tree_view(char* name, gint column_id) {
 
   // This makes column cells editable (via entry)
   g_object_set(column_renderer, "editable", TRUE, NULL);
+  g_signal_connect(column_renderer, "edited",
+                   (GCallback) on_tree_view_cell_edited, &column_id);
 
   // Declare column name, how to render column cells (via cell renderer)
   //         it's type (text) and link it with corresponding column id
@@ -131,6 +147,24 @@ void initialize_tree_view_columns(void) {
   append_column_to_tree_view("Y Coordinate", Y_COORDINATE_COLUMN);
 }
 
+// TODO: better name
+gboolean on_key_press (GtkWidget *widget, GdkEventKey *event, gpointer data) {
+    if (event->keyval == GDK_KEY_Delete){
+      GtkTreeIter iter;
+      GtkTreeSelection* selection =
+        gtk_tree_view_get_selection(
+          GTK_TREE_VIEW(tree_view_for_points)
+        );
+
+      GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
+      gtk_tree_selection_get_selected(selection, & model, &iter);
+
+      gtk_tree_store_remove(tree_store, &iter);
+      return TRUE;
+    }
+    return FALSE;
+}
+
 // `tree_view_for_points` is the widget declared in the top of the file
 void initialize_tree_view_for_points(void) {
   initialize_tree_view_columns();
@@ -140,9 +174,12 @@ void initialize_tree_view_for_points(void) {
     GTK_TREE_VIEW(tree_view_for_points),
     GTK_TREE_MODEL(tree_store)
   );
+
+  gtk_widget_add_events(tree_view_for_points, GDK_KEY_PRESS_MASK);
+  g_signal_connect(G_OBJECT(tree_view_for_points), "key_press_event", G_CALLBACK (on_key_press), NULL);
 }
 
-// We will load `layout.glade` in this builder
+// We will load `layout.glade` in this `builder`
 GtkBuilder* builder;
 
 // Use define to get widget by name from `builder`
@@ -278,19 +315,62 @@ void redraw(cairo_t* cr) {
 // Handler for `drawing_area` `draw` signal
 void on_drawing_area_draw(GtkWidget *drawing_area, cairo_t *cr, gpointer data) {
   cairo_set_source_surface(cr, surface, 0, 0);
-  cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
   cairo_paint(cr);
-  redraw(cr);
+}
+
+int path_number = 1;
+
+void on_add_path_button_clicked(GtkButton* button, gpointer user_data){
+  GtkTreeIter iter;
+
+  int  len     = snprintf(NULL, 0,"%d", path_number);
+  char num[len];  sprintf(num, "%d", path_number ++);
+
+  gchar* name = "Контур ";
+  gchar* path_name = g_strconcat(name, num, NULL);
+
+  gtk_tree_store_append(tree_store, &iter, NULL);
+  gtk_tree_store_set(tree_store, &iter,
+                     X_COORDINATE_COLUMN, path_name,
+                     Y_COORDINATE_COLUMN, "<name>",
+                     -1);
+
+  g_free(path_name);
+}
+
+void on_add_point_button_clicked(GtkButton* button, gpointer user_data) {
+ /* `x_entry`                     */
+ /* `y_entry`                     */
+ /* `choose_path_text_combo_box`  */
+
+  gchar x_text[9];
+  gtk_entry_set_text(GTK_ENTRY(x_entry), x_text);
+
+  gchar y_text[9];
+  gtk_entry_set_text(GTK_ENTRY(y_entry), y_text);
+
+  gchar* path_name = gtk_combo_box_text_get_active_text(
+    GTK_COMBO_BOX_TEXT(choose_path_text_combo_box)
+  );
+
+  GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
+
+  GtkTreeIter iter;
+  gtk_tree_model_get_iter(model, &iter,
+                          gtk_tree_path_new_first());
+
+  while(gtk_tree_model_iter_next(model, &iter)) {
+    GValue* x_value;
+
+    gtk_tree_model_get_value(model, &iter, X_COORDINATE_COLUMN, x_value);
+    const gchar* x = g_value_get_string(x_value);
+
+    g_print("Hey");
+  }
 }
 
 // [Open] button for opening projects
 void on_open_button_clicked(GtkButton* button, gpointer user_data) {
   // TODO: open file manager and get project
   // TODO: remove current contents
-  cairo_t* cr = cairo_create(surface);
-
-  redraw(cr);
-  g_print("Open!\n");
-
-  cairo_destroy(cr);
 }
