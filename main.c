@@ -97,30 +97,20 @@ void initialize_tree_store(void) {
                                   G_TYPE_STRING  /* --> Y coordinate column */);
 }
 
-void on_tree_view_cell_edited(GtkCellRendererText *cell,
-                                gchar *path_string,
-                                gchar *new_text,
-                                gpointer user_data) {
-  GtkTreeIter iter;
-  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
-                          gtk_tree_path_new_from_string(path_string));
-
-  gint* column_id = user_data;
-  gtk_tree_store_set(tree_store, &iter,
-                     *column_id, new_text,
-                     -1);
-}
-
 // It appends columns to `tree_view_for_columns` declared in the top of this file
-void append_column_to_tree_view(char* name, gint column_id) {
+void append_column_to_tree_view(char* name, gint column_id,
+                                void (*on_tree_view_cell_edited)(
+                                  GtkCellRendererText *cell,
+                                  gchar *path_string,
+                                  gchar *new_text,
+                                  gpointer user_data)) {
   GtkCellRenderer* column_renderer =
     gtk_cell_renderer_text_new(); // Use simple renderer
                                   // To render text as... text
 
   // This makes column cells editable (via entry)
   g_object_set(column_renderer, "editable", TRUE, NULL);
-  g_signal_connect(column_renderer, "edited",
-                   (GCallback) on_tree_view_cell_edited, &column_id);
+  g_signal_connect(column_renderer, "edited", (GCallback) on_tree_view_cell_edited, NULL);
 
   // Declare column name, how to render column cells (via cell renderer)
   //         it's type (text) and link it with corresponding column id
@@ -142,9 +132,50 @@ void append_column_to_tree_view(char* name, gint column_id) {
     column);
 }
 
+void update_tree_model_cell(gchar* path, gint column_id, gchar* new_text) {
+  GtkTreeIter iter;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
+                          gtk_tree_path_new_from_string(path));
+
+  gtk_tree_store_set(tree_store, &iter,
+                     column_id, new_text,
+                     -1);
+}
+
+gboolean is_number(char* string) { // TODO: make it smarter
+  do {
+    if (*string == '.')
+      continue;
+
+    int current = *string - '0';
+    if (current <= 0 || current >= 9)
+      return FALSE;
+  } while(*(string = string + 1) != '\0');
+
+  return TRUE;
+}
+
+void on_tree_view_x_cell_edited(GtkCellRendererText *cell,
+                                gchar *path_string,
+                                gchar *new_text,
+                                gpointer user_data) {
+
+  if (is_number(new_text))
+    update_tree_model_cell(path_string, X_COORDINATE_COLUMN, new_text);
+}
+
+void on_tree_view_y_cell_edited(GtkCellRendererText *cell,
+                                gchar *path_string,
+                                gchar *new_text,
+                                gpointer user_data) {
+
+  if (is_number(new_text))
+    update_tree_model_cell(path_string, Y_COORDINATE_COLUMN, new_text);
+}
+
 void initialize_tree_view_columns(void) {
-  append_column_to_tree_view("X Coordinate", X_COORDINATE_COLUMN);
-  append_column_to_tree_view("Y Coordinate", Y_COORDINATE_COLUMN);
+  append_column_to_tree_view("X Coordinate", X_COORDINATE_COLUMN, on_tree_view_x_cell_edited);
+  append_column_to_tree_view("Y Coordinate", Y_COORDINATE_COLUMN, on_tree_view_y_cell_edited);
 }
 
 // TODO: better name
@@ -279,7 +310,9 @@ void draw_border(cairo_t* cr, int padding, int width, int height) {
 }
 
 // Draw grid with `padding` around it and hcells * vcells number of cells
-void draw_grid(cairo_t* cr, int padding, int hcells, int vcells, int width, int height) {
+void draw_grid(cairo_t* cr, int padding,
+               int hcells, int vcells,
+               int width , int height) {
   int delta_x = (width  - 2 * padding) / hcells;
   int delta_y = (height - 2 * padding) / vcells;
 
@@ -290,9 +323,75 @@ void draw_grid(cairo_t* cr, int padding, int hcells, int vcells, int width, int 
     cairo_line(cr, padding, padding + i * delta_y, width - padding, padding + i * delta_y);
 }
 
+void draw_paths_and_points(cairo_t* cr, int padding, int point_radius,
+                           int  hcells, int vcells,
+                           int   width, int height,
+                           gdouble r, gdouble g, gdouble b) {
+
+  int delta_x = (width  - 2 * padding) / hcells;
+  int delta_y = (height - 2 * padding) / vcells;
+
+  GtkTreeIter parent;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &parent,
+                          gtk_tree_path_new_first());
+
+  if (!gtk_tree_store_iter_is_valid(tree_store, &parent))
+    return;
+
+  do {
+    GtkTreeIter iter;
+    if (gtk_tree_model_iter_n_children(GTK_TREE_MODEL(tree_store), &parent) == 0)
+      continue;
+
+    gtk_tree_model_iter_nth_child(GTK_TREE_MODEL(tree_store), &iter, &parent, 0);
+
+    gboolean is_first = TRUE;
+    gdouble x_from, y_from;
+
+    do {
+      GValue x_value = G_VALUE_INIT;
+      gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
+                               X_COORDINATE_COLUMN, &x_value);
+
+      const gchar* x_string = g_value_get_string(&x_value);
+
+      double x;
+      sscanf(x_string, "%lf", &x);
+
+      GValue y_value = G_VALUE_INIT;
+      gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
+                               Y_COORDINATE_COLUMN, &y_value);
+
+      const gchar* y_string = g_value_get_string(&y_value);
+
+      double y;
+      sscanf(y_string, "%lf", &y);
+
+      double x_real = x * delta_x + padding;
+      double y_real = y * delta_y + padding;
+
+      // Draw a point
+      cairo_arc(cr, x_real, y_real, point_radius, 0, 2 * 3.1415926);
+      cairo_fill(cr);
+
+      // Draw a line
+      if (!is_first) {
+        cairo_line(cr, x_from, y_from, x_real, y_real);
+        cairo_stroke(cr);
+      } else {
+        is_first = FALSE;
+      }
+
+      x_from = x_real;
+      y_from = y_real;
+    } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &iter));
+
+  } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &parent));
+}
+
 // Redraw the entire picture
 void redraw(cairo_t* cr) {
-  int width = gtk_widget_get_allocated_width(drawing_area);
+  int width  = gtk_widget_get_allocated_width (drawing_area);
   int height = gtk_widget_get_allocated_height(drawing_area);
 
   int padding = 20;
@@ -304,6 +403,12 @@ void redraw(cairo_t* cr) {
 
   // TODO: make grid optional
   draw_grid(cr, padding, 10, 10, width, height);
+
+  cairo_stroke(cr);
+
+  cairo_set_source_rgb(cr, 1.0, 1.0, 0.0);
+
+  draw_paths_and_points(cr, padding, 10, 10, 10, width, height, 1.0, 1.0, 1.0);
 
   // Show all the lines
   cairo_stroke(cr);
@@ -334,6 +439,15 @@ void on_add_path_button_clicked(GtkButton* button, gpointer user_data){
                      X_COORDINATE_COLUMN, path_name,
                      Y_COORDINATE_COLUMN, "<name>",
                      -1);
+
+  for (int i = 0; i < 10; ++ i) {
+    GtkTreeIter piter;
+    gtk_tree_store_append(tree_store, &piter, &iter);
+    gtk_tree_store_set(tree_store, &piter,
+                       X_COORDINATE_COLUMN, "0",
+                       Y_COORDINATE_COLUMN, "0",
+                       -1);
+  }
 
   g_free(path_name);
 }
@@ -371,6 +485,10 @@ void on_add_point_button_clicked(GtkButton* button, gpointer user_data) {
 
 // [Open] button for opening projects
 void on_open_button_clicked(GtkButton* button, gpointer user_data) {
+  cairo_t* cr = cairo_create(surface);
+  redraw(cr);
+  cairo_destroy(cr);
+  gtk_widget_queue_draw(drawing_area);
   // TODO: open file manager and get project
   // TODO: remove current contents
 }
