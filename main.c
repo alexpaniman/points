@@ -143,14 +143,11 @@ void update_tree_model_cell(gchar* path, gint column_id, gchar* new_text) {
 }
 
 gboolean is_number(char* string) { // TODO: make it smarter
-  do {
-    if (*string == '.')
-      continue;
+  char* end;
+  strtod(string, &end);
 
-    int current = *string - '0';
-    if (current <= 0 || current >= 9)
-      return FALSE;
-  } while(*(string = string + 1) != '\0');
+  if (end == string || *end != '\0')
+    return FALSE;
 
   return TRUE;
 }
@@ -159,8 +156,12 @@ void on_tree_view_x_cell_edited(GtkCellRendererText *cell,
                                 gchar *path_string,
                                 gchar *new_text,
                                 gpointer user_data) {
+  GtkTreeIter iter;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
+                          gtk_tree_path_new_from_string(path_string));
 
-  if (is_number(new_text))
+  if ((gtk_tree_store_iter_depth(tree_store, &iter) == 0 ||
+      is_number(new_text)) && g_strcmp0(new_text, "") != 0)
     update_tree_model_cell(path_string, X_COORDINATE_COLUMN, new_text);
 }
 
@@ -168,8 +169,12 @@ void on_tree_view_y_cell_edited(GtkCellRendererText *cell,
                                 gchar *path_string,
                                 gchar *new_text,
                                 gpointer user_data) {
+  GtkTreeIter iter;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
+                          gtk_tree_path_new_from_string(path_string));
 
-  if (is_number(new_text))
+  if (gtk_tree_store_iter_depth(tree_store, &iter) != 0 &&
+      is_number(new_text) && g_strcmp0(new_text, "") != 0)
     update_tree_model_cell(path_string, Y_COORDINATE_COLUMN, new_text);
 }
 
@@ -178,17 +183,49 @@ void initialize_tree_view_columns(void) {
   append_column_to_tree_view("Y Coordinate", Y_COORDINATE_COLUMN, on_tree_view_y_cell_edited);
 }
 
-// TODO: better name
+void update_paths_in_combo_box(void) {
+  gtk_combo_box_text_remove_all(
+    GTK_COMBO_BOX_TEXT(choose_path_text_combo_box)
+  );
+
+  GtkTreeIter iter;
+  gboolean success =
+    gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
+                            gtk_tree_path_new_first());
+
+  if(!success) // TODO: is working
+    return;
+
+  gint count = 0;
+  do {
+    GValue value = G_VALUE_INIT;
+    gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
+                             X_COORDINATE_COLUMN, &value);
+
+    const gchar* name = g_value_get_string(&value);
+    gtk_combo_box_text_append_text(
+      GTK_COMBO_BOX_TEXT(choose_path_text_combo_box),
+      name
+    );
+
+    count ++;
+  } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &iter));
+
+  gtk_combo_box_set_active(GTK_COMBO_BOX(choose_path_text_combo_box), count - 1);
+}
+
 gboolean on_key_press (GtkWidget *widget, GdkEventKey *event, gpointer data) {
     if (event->keyval == GDK_KEY_Delete){
       GtkTreeIter iter;
-      GtkTreeSelection* selection =
-        gtk_tree_view_get_selection(
-          GTK_TREE_VIEW(tree_view_for_points)
-        );
+      GtkTreeSelection* selection = gtk_tree_view_get_selection(
+        GTK_TREE_VIEW(tree_view_for_points)
+      );
 
       GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
-      gtk_tree_selection_get_selected(selection, & model, &iter);
+      gtk_tree_selection_get_selected(selection, &model, &iter);
+
+      if (gtk_tree_store_iter_depth(tree_store, &iter) == 0)
+        update_paths_in_combo_box();
 
       gtk_tree_store_remove(tree_store, &iter);
       return TRUE;
@@ -323,6 +360,25 @@ void draw_grid(cairo_t* cr, int padding,
     cairo_line(cr, padding, padding + i * delta_y, width - padding, padding + i * delta_y);
 }
 
+void iterate_paths(void (*path_iterator)(GtkTreeIter* path_iter, const gchar* name)) {
+  GtkTreeIter path_iter;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &path_iter,
+                          gtk_tree_path_new_first());
+
+  if (!gtk_tree_store_iter_is_valid(tree_store, &path_iter))
+    return;
+
+  do {
+    GValue value = G_VALUE_INIT;
+    gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &path_iter,
+                             X_COORDINATE_COLUMN, &value);
+
+    const gchar* name = g_value_get_string(&value);
+    path_iterator(&path_iter, name);
+
+  } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &path_iter));
+}
+
 void draw_paths_and_points(cairo_t* cr, int padding, int point_radius,
                            int  hcells, int vcells,
                            int   width, int height,
@@ -419,12 +475,10 @@ void redraw(cairo_t* cr) {
 
 // Handler for `drawing_area` `draw` signal
 void on_drawing_area_draw(GtkWidget *drawing_area, cairo_t *cr, gpointer data) {
-  cairo_set_source_surface(cr, surface, 0, 0);
-  cairo_paint(cr);
+  redraw(cr);
 }
 
 int path_number = 1;
-
 void on_add_path_button_clicked(GtkButton* button, gpointer user_data){
   GtkTreeIter iter;
 
@@ -440,47 +494,54 @@ void on_add_path_button_clicked(GtkButton* button, gpointer user_data){
                      Y_COORDINATE_COLUMN, "<name>",
                      -1);
 
-  for (int i = 0; i < 10; ++ i) {
-    GtkTreeIter piter;
-    gtk_tree_store_append(tree_store, &piter, &iter);
-    gtk_tree_store_set(tree_store, &piter,
-                       X_COORDINATE_COLUMN, "0",
-                       Y_COORDINATE_COLUMN, "0",
-                       -1);
-  }
-
   g_free(path_name);
+
+  update_paths_in_combo_box();
 }
 
 void on_add_point_button_clicked(GtkButton* button, gpointer user_data) {
- /* `x_entry`                     */
- /* `y_entry`                     */
- /* `choose_path_text_combo_box`  */
+  const gchar* x_text = gtk_entry_get_text(GTK_ENTRY(x_entry));
+  const gchar* y_text = gtk_entry_get_text(GTK_ENTRY(y_entry));
 
-  gchar x_text[9];
-  gtk_entry_set_text(GTK_ENTRY(x_entry), x_text);
+  // Defaults for x in y
+  if (g_strcmp0(x_text, "") == 0)
+    x_text = "0";
 
-  gchar y_text[9];
-  gtk_entry_set_text(GTK_ENTRY(y_entry), y_text);
+  if (g_strcmp0(y_text, "") == 0)
+    y_text = "0";
+
 
   gchar* path_name = gtk_combo_box_text_get_active_text(
     GTK_COMBO_BOX_TEXT(choose_path_text_combo_box)
   );
 
-  GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
+  if (path_name == NULL)
+    return;
 
   GtkTreeIter iter;
-  gtk_tree_model_get_iter(model, &iter,
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
                           gtk_tree_path_new_first());
 
-  while(gtk_tree_model_iter_next(model, &iter)) {
-    GValue* x_value;
+  if (!gtk_tree_store_iter_is_valid(tree_store, &iter))
+    return;
 
-    gtk_tree_model_get_value(model, &iter, X_COORDINATE_COLUMN, x_value);
-    const gchar* x = g_value_get_string(x_value);
+  do {
+    GValue value = G_VALUE_INIT;
+    gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter, X_COORDINATE_COLUMN, &value);
 
-    g_print("Hey");
-  }
+    const gchar* name = g_value_get_string(&value);
+    if (g_strcmp0(path_name, name) == 0) {
+      GtkTreeIter append_iter;
+
+      gtk_tree_store_append(tree_store, &append_iter, &iter);
+      gtk_tree_store_set(tree_store, &append_iter,
+                         X_COORDINATE_COLUMN, x_text,
+                         Y_COORDINATE_COLUMN, y_text,
+                         -1);
+
+      return;
+    }
+  } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &iter));
 }
 
 // [Open] button for opening projects
@@ -489,6 +550,7 @@ void on_open_button_clicked(GtkButton* button, gpointer user_data) {
   redraw(cr);
   cairo_destroy(cr);
   gtk_widget_queue_draw(drawing_area);
+
   // TODO: open file manager and get project
   // TODO: remove current contents
 }
