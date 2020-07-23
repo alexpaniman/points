@@ -184,15 +184,13 @@ void update_paths_in_combo_box(void) {
   );
 
   GtkTreeIter iter;
-  gboolean success =
-    gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
-                            gtk_tree_path_new_first());
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
+                          gtk_tree_path_new_first());
 
-  if(!success)
+  if (!gtk_tree_store_iter_is_valid(tree_store, &iter))
     return;
 
-  gint count = 0;
-  do {
+  int count = 0; do {
     GValue value = G_VALUE_INIT;
     gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
                              X_COORDINATE_COLUMN, &value);
@@ -219,10 +217,10 @@ gboolean on_tree_view_key_pressed(GtkWidget *widget, GdkEventKey *event, gpointe
     GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
     gtk_tree_selection_get_selected(selection, &model, &iter);
 
+    gtk_tree_store_remove(tree_store, &iter);
+
     if (gtk_tree_store_iter_depth(tree_store, &iter) == 0)
       update_paths_in_combo_box();
-
-    gtk_tree_store_remove(tree_store, &iter);
     return TRUE;
   }
   return FALSE;
@@ -363,10 +361,9 @@ void draw_paths_and_points(cairo_t* cr, int padding,      int point_radius,
 
     gtk_tree_model_iter_nth_child(GTK_TREE_MODEL(tree_store), &iter, &parent, 0);
 
-    gboolean is_first = TRUE;
-    gdouble x_from, y_from;
+    gdouble x_from , y_from;
 
-    do {
+    int i = 0; do {
       GValue x_value = G_VALUE_INIT;
       gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
                                X_COORDINATE_COLUMN, &x_value);
@@ -385,22 +382,11 @@ void draw_paths_and_points(cairo_t* cr, int padding,      int point_radius,
       double y;
       sscanf(y_string, "%lf", &y);
 
-      y = vcells - y; // Move coordinates start
-
       double x_real = x * delta_x + padding;
-      double y_real = y * delta_y + padding; // TODO: strange
-
-      // Draw a point
-      cairo_set_source_rgba(cr,
-                            point_color->red , point_color->green,
-                            point_color->blue, point_color->alpha);
-
-      cairo_arc(cr, x_real, y_real, point_radius, 0, 2 * 3.1415926);
-
-      cairo_fill(cr);
+      double y_real = y * delta_y + padding;
 
       // Draw a line
-      if (!is_first) {
+      if (i != 0) {
         cairo_set_source_rgba(cr,
                               line_color->red , line_color->green,
                               line_color->blue, line_color->alpha);
@@ -409,14 +395,33 @@ void draw_paths_and_points(cairo_t* cr, int padding,      int point_radius,
         cairo_line(cr, x_from, y_from, x_real, y_real);
 
         cairo_stroke(cr);
-      } else {
-        is_first = FALSE;
+      }
+
+      if (i != 0) {
+        // Draw a point
+        cairo_set_source_rgba(cr,
+                              point_color->red , point_color->green,
+                              point_color->blue, point_color->alpha);
+
+        cairo_arc(cr, x_from, y_from, point_radius, 0, 2 * 3.1415926);
+
+        cairo_fill(cr);
       }
 
       x_from = x_real;
       y_from = y_real;
+
+      ++ i;
     } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &iter));
 
+    // Draw the last point
+    cairo_set_source_rgba(cr,
+                          point_color->red , point_color->green,
+                          point_color->blue, point_color->alpha);
+
+    cairo_arc(cr, x_from, y_from, point_radius, 0, 2 * 3.1415926);
+
+    cairo_fill(cr);
   } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &parent));
 }
 
