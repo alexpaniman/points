@@ -6,13 +6,7 @@
  *  Functions linked to signals described in layout.glade:
  *
  *      In <Preview> tab:
- *          `on_drawing_area_configure_event`
  *          `on_drawing_area_draw`
- *
- *          `on_open_button_clicked`
- *
- *          `on_save_project_button_clicked`
- *          `on_save_image_button_clicked`
  *
  *      In <Points List> tab:
  *          `on_add_path_button_clicked`
@@ -24,14 +18,10 @@
  *  Signals are being handled by functions and you have to look up
  *  signature for each of them.
  *
- *  Here only three types of signals are being handled:
+ *  Here only two types of signals (except defined in the code) are being handled:
  *      `clicked` signal emited by button
  *      when the button has been activated:
  *          `void <function-name>(GtkButton* button, gpointer user_data)`
- *
- *      `configure_event` signal emited by all widgets
- *      when the size, position or stacking of the widget's window has changed:
- *          `gboolean <function-name>(GtkWidget* widget, GdkEventConfigure *event)`
  *
  *      `draw` signal emited also by all widgets
  *      when widget is supposed to render itself:
@@ -46,9 +36,6 @@
  *      In <Preview> tab:
  *          `drawing_area`
  *
- *          `save_project_file_picker`
- *          `save_image_file_picker`
- *
  *      In <Points List> tab:
  *          `tree_view_for_points`
  *
@@ -58,8 +45,12 @@
  *
  *      In <Settings> tab:
  *          `line_width_entry`
+ *          `randomize_colors_switch`
+ *          `line_color_picker`
  *          `draw_grid_switch`
- *          `draw_every_path_with_own_color_switch`
+ *          `grid_color_picker`
+ *          `point_radius_entry`
+ *          `point_color_picker`
  *  */
 
 // ----> Widgets borrowed from `layout.glade` <---- //
@@ -78,8 +69,12 @@ GtkWidget* choose_path_text_combo_box;
 
 // --> Widgets from    <Settings> tab <-- //
 GtkWidget* line_width_entry;
+GtkWidget* randomize_colors_switch;
+GtkWidget* line_color_picker;
 GtkWidget* draw_grid_switch;
-GtkWidget* draw_every_path_with_own_color_switch;
+GtkWidget* grid_color_picker;
+GtkWidget* point_radius_entry;
+GtkWidget* point_color_picker;
 // ------------------------------------------------ //
 
 enum { // <-- Tree store columns
@@ -142,7 +137,7 @@ void update_tree_model_cell(gchar* path, gint column_id, gchar* new_text) {
                      -1);
 }
 
-gboolean is_number(char* string) { // TODO: make it smarter
+gboolean is_number(const char* string) {
   char* end;
   strtod(string, &end);
 
@@ -193,7 +188,7 @@ void update_paths_in_combo_box(void) {
     gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
                             gtk_tree_path_new_first());
 
-  if(!success) // TODO: is working
+  if(!success)
     return;
 
   gint count = 0;
@@ -214,23 +209,23 @@ void update_paths_in_combo_box(void) {
   gtk_combo_box_set_active(GTK_COMBO_BOX(choose_path_text_combo_box), count - 1);
 }
 
-gboolean on_key_press (GtkWidget *widget, GdkEventKey *event, gpointer data) {
-    if (event->keyval == GDK_KEY_Delete){
-      GtkTreeIter iter;
-      GtkTreeSelection* selection = gtk_tree_view_get_selection(
-        GTK_TREE_VIEW(tree_view_for_points)
-      );
+gboolean on_tree_view_key_pressed(GtkWidget *widget, GdkEventKey *event, gpointer data) {
+  if (event->keyval == GDK_KEY_Delete){
+    GtkTreeIter iter;
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(
+      GTK_TREE_VIEW(tree_view_for_points)
+    );
 
-      GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
-      gtk_tree_selection_get_selected(selection, &model, &iter);
+    GtkTreeModel* model = GTK_TREE_MODEL(tree_store);
+    gtk_tree_selection_get_selected(selection, &model, &iter);
 
-      if (gtk_tree_store_iter_depth(tree_store, &iter) == 0)
-        update_paths_in_combo_box();
+    if (gtk_tree_store_iter_depth(tree_store, &iter) == 0)
+      update_paths_in_combo_box();
 
-      gtk_tree_store_remove(tree_store, &iter);
-      return TRUE;
-    }
-    return FALSE;
+    gtk_tree_store_remove(tree_store, &iter);
+    return TRUE;
+  }
+  return FALSE;
 }
 
 // `tree_view_for_points` is the widget declared in the top of the file
@@ -244,7 +239,8 @@ void initialize_tree_view_for_points(void) {
   );
 
   gtk_widget_add_events(tree_view_for_points, GDK_KEY_PRESS_MASK);
-  g_signal_connect(G_OBJECT(tree_view_for_points), "key_press_event", G_CALLBACK (on_key_press), NULL);
+  g_signal_connect(G_OBJECT(tree_view_for_points), "key_press_event",
+                   G_CALLBACK(on_tree_view_key_pressed), NULL);
 }
 
 // We will load `layout.glade` in this `builder`
@@ -267,8 +263,6 @@ int main(int argc, char **argv) {
   main_window                = GET_WIDGET(               "main_window");
 
   drawing_area               = GET_WIDGET(              "drawing_area");
-  save_project_file_picker   = GET_WIDGET(  "save_project_file_picker");
-  save_image_file_picker     = GET_WIDGET(    "save_image_file_picker");
 
   tree_view_for_points       = GET_WIDGET(      "tree_view_for_points");
   x_entry                    = GET_WIDGET(                   "x_entry");
@@ -276,10 +270,13 @@ int main(int argc, char **argv) {
   choose_path_text_combo_box = GET_WIDGET("choose_path_text_combo_box");
 
   line_width_entry           = GET_WIDGET(          "line_width_entry");
+  randomize_colors_switch    = GET_WIDGET(   "randomize_colors_switch");
+  line_color_picker          = GET_WIDGET(         "line_color_picker");
   draw_grid_switch           = GET_WIDGET(          "draw_grid_switch");
-  draw_every_path_with_own_color_switch =
-    GET_WIDGET(                "draw_every_path_with_own_color_switch");
-  // ------------------------------------------------
+  grid_color_picker          = GET_WIDGET(         "grid_color_picker");
+  point_radius_entry         = GET_WIDGET(        "point_radius_entry");
+  point_color_picker         = GET_WIDGET(        "point_color_picker");
+  // ------------------------------------- -----------
 
   // Initialize tree_view & it's model
   initialize_tree_view_for_points();
@@ -302,39 +299,6 @@ int main(int argc, char **argv) {
   return EXIT_SUCCESS;
 }
 
-// Cairo surface that represents `drawing_area`
-cairo_surface_t* surface = NULL;
-
-// Make surface white(1, 1, 1)
-static void clear_surface(void) {
-  cairo_t* cr = cairo_create(surface);
-
-  cairo_set_source_rgb(cr, 1, 1, 1);
-  cairo_paint(cr);
-
-  cairo_destroy(cr);
-}
-
-// Initialize `surface` to create cairo on demand later
-gboolean on_drawing_area_configure_event(GtkWidget* widget, GdkEventConfigure *event, gpointer data) {
-  if (surface) {
-    cairo_surface_destroy(surface);
-  }
-
-  surface = gdk_window_create_similar_surface(
-    gtk_widget_get_window(widget),
-    CAIRO_CONTENT_COLOR,
-    gtk_widget_get_allocated_width(widget),
-    gtk_widget_get_allocated_height(widget)
-  );
-
-  // Initialize surface to white
-  clear_surface();
-
-  // We've handled the configure event, no need for further processing
-  return TRUE;
-}
-
 // Draw a line from (from_x, from_y) to (to_x, to_y)
 void cairo_line(cairo_t* cr, double from_x, double from_y, double to_x, double to_y) {
   cairo_move_to(cr, from_x, from_y);
@@ -342,14 +306,28 @@ void cairo_line(cairo_t* cr, double from_x, double from_y, double to_x, double t
 }
 
 // Draw border with `padding` around it
-void draw_border(cairo_t* cr, int padding, int width, int height) {
+void draw_border(cairo_t* cr, int padding,
+                 int width, int height,
+                 GdkRGBA* border_color) {
+
+  cairo_set_source_rgba(cr,
+                        border_color->red , border_color->green,
+                        border_color->blue, border_color->alpha);
+
   cairo_rectangle(cr, padding, padding, width - 2 * padding, height - 2 * padding);
+
+  cairo_stroke(cr);
 }
 
-// Draw grid with `padding` around it and hcells * vcells number of cells
 void draw_grid(cairo_t* cr, int padding,
                int hcells, int vcells,
-               int width , int height) {
+               int width , int height,
+               GdkRGBA* grid_color) {
+
+  cairo_set_source_rgba(cr,
+                        grid_color->red , grid_color->green,
+                        grid_color->blue, grid_color->alpha);
+
   int delta_x = (width  - 2 * padding) / hcells;
   int delta_y = (height - 2 * padding) / vcells;
 
@@ -358,31 +336,15 @@ void draw_grid(cairo_t* cr, int padding,
 
   for (int i = 0; i < vcells; ++ i)
     cairo_line(cr, padding, padding + i * delta_y, width - padding, padding + i * delta_y);
+
+  cairo_stroke(cr);
 }
 
-void iterate_paths(void (*path_iterator)(GtkTreeIter* path_iter, const gchar* name)) {
-  GtkTreeIter path_iter;
-  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &path_iter,
-                          gtk_tree_path_new_first());
-
-  if (!gtk_tree_store_iter_is_valid(tree_store, &path_iter))
-    return;
-
-  do {
-    GValue value = G_VALUE_INIT;
-    gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &path_iter,
-                             X_COORDINATE_COLUMN, &value);
-
-    const gchar* name = g_value_get_string(&value);
-    path_iterator(&path_iter, name);
-
-  } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &path_iter));
-}
-
-void draw_paths_and_points(cairo_t* cr, int padding, int point_radius,
-                           int  hcells, int vcells,
-                           int   width, int height,
-                           gdouble r, gdouble g, gdouble b) {
+void draw_paths_and_points(cairo_t* cr, int padding,      int point_radius,
+                           int  hcells, int  vcells,
+                           int   width, int  height,
+                           gdouble       line_width,
+                           GdkRGBA*     point_color, GdkRGBA*  line_color) {
 
   int delta_x = (width  - 2 * padding) / hcells;
   int delta_y = (height - 2 * padding) / vcells;
@@ -423,16 +385,29 @@ void draw_paths_and_points(cairo_t* cr, int padding, int point_radius,
       double y;
       sscanf(y_string, "%lf", &y);
 
+      y = vcells - y; // Move coordinates start
+
       double x_real = x * delta_x + padding;
-      double y_real = y * delta_y + padding;
+      double y_real = y * delta_y + padding; // TODO: strange
 
       // Draw a point
+      cairo_set_source_rgba(cr,
+                            point_color->red , point_color->green,
+                            point_color->blue, point_color->alpha);
+
       cairo_arc(cr, x_real, y_real, point_radius, 0, 2 * 3.1415926);
+
       cairo_fill(cr);
 
       // Draw a line
       if (!is_first) {
+        cairo_set_source_rgba(cr,
+                              line_color->red , line_color->green,
+                              line_color->blue, line_color->alpha);
+
+        cairo_set_line_width(cr, line_width);
         cairo_line(cr, x_from, y_from, x_real, y_real);
+
         cairo_stroke(cr);
       } else {
         is_first = FALSE;
@@ -445,32 +420,51 @@ void draw_paths_and_points(cairo_t* cr, int padding, int point_radius,
   } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &parent));
 }
 
-// Redraw the entire picture
 void redraw(cairo_t* cr) {
-  int width  = gtk_widget_get_allocated_width (drawing_area);
+  int width = gtk_widget_get_allocated_width(drawing_area);
   int height = gtk_widget_get_allocated_height(drawing_area);
 
-  int padding = 20;
+  int padding = 10;
 
-  cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
+  int hcells = 10;
+  int vcells = 10;
 
-  // TODO: make border optional
-  draw_border(cr, padding, width, height);
+  /* GdkRGBA* border_color; */
+  /* gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(border_color), border_color); */
 
-  // TODO: make grid optional
-  draw_grid(cr, padding, 10, 10, width, height);
+  gboolean is_grid_enabled = gtk_switch_get_active(GTK_SWITCH(draw_grid_switch));
 
-  cairo_stroke(cr);
+  if (is_grid_enabled) {
+    GdkRGBA grid_color;
+    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(grid_color_picker), &grid_color);
 
-  cairo_set_source_rgb(cr, 1.0, 1.0, 0.0);
+    draw_grid(cr, padding, hcells, vcells, width, height, &grid_color);
+    draw_border(cr, padding, width, height, &grid_color);
+  }
 
-  draw_paths_and_points(cr, padding, 10, 10, 10, width, height, 1.0, 1.0, 1.0);
+  GdkRGBA line_color;
+  gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(line_color_picker),
+                             &line_color);
 
-  // Show all the lines
-  cairo_stroke(cr);
+  GdkRGBA point_color;
+  gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(point_color_picker),
+                             &point_color);
 
-  // Redraw widget. It will cause drawing_area to emit "draw" signal
-  gtk_widget_queue_draw(drawing_area);
+  const gchar* point_radius_text =
+    gtk_entry_get_text(GTK_ENTRY(point_radius_entry));
+
+  gchar* end_text;
+  double point_radius = strtod(point_radius_text, &end_text);
+
+  const gchar* line_width_text =
+    gtk_entry_get_text(GTK_ENTRY(line_width_entry));
+
+  double line_width = strtod(line_width_text, &end_text);
+
+  draw_paths_and_points(cr, padding, point_radius,
+                        hcells, vcells,
+                        width , height,  line_width,
+                          &point_color, &line_color);
 }
 
 // Handler for `drawing_area` `draw` signal
@@ -491,7 +485,7 @@ void on_add_path_button_clicked(GtkButton* button, gpointer user_data){
   gtk_tree_store_append(tree_store, &iter, NULL);
   gtk_tree_store_set(tree_store, &iter,
                      X_COORDINATE_COLUMN, path_name,
-                     Y_COORDINATE_COLUMN, "<name>",
+                     Y_COORDINATE_COLUMN, "",
                      -1);
 
   g_free(path_name);
@@ -510,6 +504,15 @@ void on_add_point_button_clicked(GtkButton* button, gpointer user_data) {
   if (g_strcmp0(y_text, "") == 0)
     y_text = "0";
 
+  if (!is_number(y_text)) {
+    gtk_entry_set_text(GTK_ENTRY(y_entry), "");
+    return;
+  }
+
+  if (!is_number(x_text)) {
+    gtk_entry_set_text(GTK_ENTRY(x_entry), "");
+    return;
+  }
 
   gchar* path_name = gtk_combo_box_text_get_active_text(
     GTK_COMBO_BOX_TEXT(choose_path_text_combo_box)
@@ -542,15 +545,4 @@ void on_add_point_button_clicked(GtkButton* button, gpointer user_data) {
       return;
     }
   } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &iter));
-}
-
-// [Open] button for opening projects
-void on_open_button_clicked(GtkButton* button, gpointer user_data) {
-  cairo_t* cr = cairo_create(surface);
-  redraw(cr);
-  cairo_destroy(cr);
-  gtk_widget_queue_draw(drawing_area);
-
-  // TODO: open file manager and get project
-  // TODO: remove current contents
 }
