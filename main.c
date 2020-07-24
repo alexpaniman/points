@@ -241,6 +241,36 @@ void initialize_tree_view_for_points(void) {
                    G_CALLBACK(on_tree_view_key_pressed), NULL);
 }
 
+// line (color = #555753, size   = 5)
+// grid (color = #D3D7CF)
+// point(color = #2E3436; radius = 5)
+void initialize_defaults(void) {
+  GdkRGBA grid_default_color  = { 0x55 / 256.0,
+                                  0x57 / 256.0,
+                                  0x53 / 256.0, 1.0 };
+  gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(grid_color_picker),
+                            &grid_default_color);
+
+  GdkRGBA line_default_color  = { 0xD3 / 256.0,
+                                  0xD7 / 256.0,
+                                  0xCF / 256.0, 1.0 };
+  gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(line_color_picker),
+                            &line_default_color);
+
+  GdkRGBA point_default_color = { 0x2E / 256.0,
+                                  0x34 / 256.0,
+                                  0x36 / 256.0, 1.0 };
+  gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(point_color_picker),
+                            &point_default_color);
+
+  gtk_entry_set_text(GTK_ENTRY(  line_width_entry), "5");
+
+  gtk_entry_set_text(GTK_ENTRY(point_radius_entry), "5");
+
+  gtk_switch_set_state(GTK_SWITCH(draw_grid_switch),
+                       TRUE);
+}
+
 // We will load `layout.glade` in this `builder`
 GtkBuilder* builder;
 
@@ -278,6 +308,9 @@ int main(int argc, char **argv) {
 
   // Initialize tree_view & it's model
   initialize_tree_view_for_points();
+
+  // Set default values for drawing
+  initialize_defaults();
 
   // Make GTK listen to signals and callback program
   // when signals are being emited
