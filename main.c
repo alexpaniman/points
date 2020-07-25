@@ -147,6 +147,64 @@ gboolean is_number(const char* string) {
   return TRUE;
 }
 
+typedef struct {
+  gdouble x;
+  gdouble y;
+} point_t;
+
+point_t min = { 0.0, 0.0 },
+        max = { 0.0, 0.0 };
+
+void update_min_and_max_points() {
+  min.x = 0.0;
+  min.y = 0.0;
+
+  max.x = 0.0;
+  max.y = 0.0;
+
+  GtkTreeIter parent;
+  gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &parent,
+                          gtk_tree_path_new_first());
+
+  if (!gtk_tree_store_iter_is_valid(tree_store, &parent))
+    return;
+
+  do {
+    GtkTreeIter iter;
+    if (gtk_tree_model_iter_n_children(GTK_TREE_MODEL(tree_store), &parent) == 0)
+      continue;
+
+    gtk_tree_model_iter_nth_child(GTK_TREE_MODEL(tree_store), &iter, &parent, 0);
+
+    do {
+      GValue x_value = G_VALUE_INIT;
+      gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
+                               X_COORDINATE_COLUMN, &x_value);
+
+      const gchar* x_string = g_value_get_string(&x_value);
+
+      double x;
+      sscanf(x_string, "%lf", &x);
+
+      GValue y_value = G_VALUE_INIT;
+      gtk_tree_model_get_value(GTK_TREE_MODEL(tree_store), &iter,
+                               Y_COORDINATE_COLUMN, &y_value);
+
+      const gchar* y_string = g_value_get_string(&y_value);
+
+      double y;
+      sscanf(y_string, "%lf", &y);
+
+      min.x = MIN(min.x, x);
+      min.y = MIN(min.y, y);
+
+      max.x = MAX(max.x, x);
+      max.y = MAX(max.y, y);
+    } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &iter));
+
+  } while(gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &parent));
+}
+
 void on_tree_view_x_cell_edited(GtkCellRendererText *cell,
                                 gchar *path_string,
                                 gchar *new_text,
@@ -155,9 +213,13 @@ void on_tree_view_x_cell_edited(GtkCellRendererText *cell,
   gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
                           gtk_tree_path_new_from_string(path_string));
 
-  if ((gtk_tree_store_iter_depth(tree_store, &iter) == 0 ||
-      is_number(new_text)) && g_strcmp0(new_text, "") != 0)
+  if (((gtk_tree_store_iter_is_valid(tree_store, &iter)
+        && gtk_tree_store_iter_depth(tree_store, &iter) == 0) ||
+        is_number(new_text)) && g_strcmp0(new_text, "") != 0) {
+
     update_tree_model_cell(path_string, X_COORDINATE_COLUMN, new_text);
+    gtk_widget_queue_draw(drawing_area);
+  }
 }
 
 void on_tree_view_y_cell_edited(GtkCellRendererText *cell,
@@ -168,9 +230,13 @@ void on_tree_view_y_cell_edited(GtkCellRendererText *cell,
   gtk_tree_model_get_iter(GTK_TREE_MODEL(tree_store), &iter,
                           gtk_tree_path_new_from_string(path_string));
 
-  if (gtk_tree_store_iter_depth(tree_store, &iter) != 0 &&
-      is_number(new_text) && g_strcmp0(new_text, "") != 0)
+  if (gtk_tree_store_iter_is_valid(tree_store, &iter)
+      && gtk_tree_store_iter_depth(tree_store, &iter) != 0 &&
+      is_number(new_text)  && g_strcmp0(new_text, "") != 0) {
+
     update_tree_model_cell(path_string, Y_COORDINATE_COLUMN, new_text);
+    gtk_widget_queue_draw(drawing_area);
+  }
 }
 
 void initialize_tree_view_columns(void) {
@@ -221,6 +287,8 @@ gboolean on_tree_view_key_pressed(GtkWidget *widget, GdkEventKey *event, gpointe
 
     if (gtk_tree_store_iter_depth(tree_store, &iter) == 0)
       update_paths_in_combo_box();
+
+    gtk_widget_queue_draw(drawing_area);
     return TRUE;
   }
   return FALSE;
@@ -241,9 +309,10 @@ void initialize_tree_view_for_points(void) {
                    G_CALLBACK(on_tree_view_key_pressed), NULL);
 }
 
-// line (color = #555753, size   = 5)
-// grid (color = #D3D7CF)
-// point(color = #2E3436; radius = 5)
+// Defaults:
+//     line (color = #555753, size = 5)
+//     grid (color = #D3D7CF, enabled = true)
+//     point(color = #2E3436, radius = 5)
 void initialize_defaults(void) {
   GdkRGBA grid_default_color  = { 0x55 / 256.0,
                                   0x57 / 256.0,
@@ -336,20 +405,6 @@ void cairo_line(cairo_t* cr, double from_x, double from_y, double to_x, double t
   cairo_line_to(cr, to_x, to_y);
 }
 
-// Draw border with `padding` around it
-void draw_border(cairo_t* cr, int padding,
-                 int width, int height,
-                 GdkRGBA* border_color) {
-
-  cairo_set_source_rgba(cr,
-                        border_color->red , border_color->green,
-                        border_color->blue, border_color->alpha);
-
-  cairo_rectangle(cr, padding, padding, width - 2 * padding, height - 2 * padding);
-
-  cairo_stroke(cr);
-}
-
 void draw_grid(cairo_t* cr, int padding,
                int hcells, int vcells,
                int width , int height,
@@ -362,20 +417,23 @@ void draw_grid(cairo_t* cr, int padding,
   int delta_x = (width  - 2 * padding) / hcells;
   int delta_y = (height - 2 * padding) / vcells;
 
-  for (int i = 0; i < hcells; ++ i)
+  for (int i = 0; i < hcells + 1; ++ i)
     cairo_line(cr, padding + i * delta_x, padding, padding + i * delta_x, height - padding);
 
-  for (int i = 0; i < vcells; ++ i)
+  for (int i = 0; i < vcells + 1; ++ i)
     cairo_line(cr, padding, padding + i * delta_y, width - padding, padding + i * delta_y);
 
   cairo_stroke(cr);
 }
 
-void draw_paths_and_points(cairo_t* cr, int padding,      int point_radius,
+void draw_paths_and_points(cairo_t* cr, int padding,
+                           int         point_radius,
                            int  hcells, int  vcells,
+                           int  hshift, int  vshift,
                            int   width, int  height,
                            gdouble       line_width,
-                           GdkRGBA*     point_color, GdkRGBA*  line_color) {
+                           GdkRGBA*     point_color,
+                           GdkRGBA*      line_color) {
 
   int delta_x = (width  - 2 * padding) / hcells;
   int delta_y = (height - 2 * padding) / vcells;
@@ -414,6 +472,11 @@ void draw_paths_and_points(cairo_t* cr, int padding,      int point_radius,
 
       double y;
       sscanf(y_string, "%lf", &y);
+
+      x -= hshift;
+      y -= vshift;
+
+      y = vcells - y;
 
       double x_real = x * delta_x + padding;
       double y_real = y * delta_y + padding;
@@ -462,13 +525,18 @@ void redraw(cairo_t* cr) {
   int width = gtk_widget_get_allocated_width(drawing_area);
   int height = gtk_widget_get_allocated_height(drawing_area);
 
+  update_min_and_max_points();
+
   int padding = 10;
 
-  int hcells = 10;
-  int vcells = 10;
+  int hcells = max.x - min.x;
+  int vcells = max.y - min.y;
 
-  /* GdkRGBA* border_color; */
-  /* gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(border_color), border_color); */
+  int hshift = min.x;
+  int vshift = min.y;
+
+  hcells = hcells < 1 ? 1 : hcells;
+  vcells = vcells < 1 ? 1 : vcells;
 
   gboolean is_grid_enabled = gtk_switch_get_active(GTK_SWITCH(draw_grid_switch));
 
@@ -477,7 +545,6 @@ void redraw(cairo_t* cr) {
     gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(grid_color_picker), &grid_color);
 
     draw_grid(cr, padding, hcells, vcells, width, height, &grid_color);
-    draw_border(cr, padding, width, height, &grid_color);
   }
 
   GdkRGBA line_color;
@@ -501,6 +568,7 @@ void redraw(cairo_t* cr) {
 
   draw_paths_and_points(cr, padding, point_radius,
                         hcells, vcells,
+                        hshift, vshift,
                         width , height,  line_width,
                           &point_color, &line_color);
 }
@@ -508,6 +576,11 @@ void redraw(cairo_t* cr) {
 // Handler for `drawing_area` `draw` signal
 void on_drawing_area_draw(GtkWidget *drawing_area, cairo_t *cr, gpointer data) {
   redraw(cr);
+}
+
+// It handles various events that can change tree_store state
+void refresh() {
+  gtk_widget_queue_draw(drawing_area);
 }
 
 int path_number = 1;
